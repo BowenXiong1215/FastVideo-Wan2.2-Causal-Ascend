@@ -55,6 +55,8 @@ docs/getting_started/ascend_910b_wan22_causal_distillation.md
 
 - 121 个 RGB 帧对应 31 个 latent frames，以 `3+3+…+3+1` 分块。
 - block 之间单向因果，block 内保持双向注意力。
+- Parquet dataloader 显式选择当前平台的 pinned-memory device，避免 Ascend
+  首次 `iter(dataloader)` 时错误初始化 CUDA。
 - 当前不包含动作、键盘或相机控制，因此不是完整可交互世界模型。
 - 已完成 Python/Shell/YAML 静态验证、补丁哈希校验、干净源码安装及重复安装验证。
 - 尚未在本仓库打包机器上完成真实 910B 张量测试或数值质量验证。
