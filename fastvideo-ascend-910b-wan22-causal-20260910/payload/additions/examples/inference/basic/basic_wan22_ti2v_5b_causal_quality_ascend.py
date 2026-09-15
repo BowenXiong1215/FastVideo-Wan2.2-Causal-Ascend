@@ -28,6 +28,13 @@ def main() -> None:
         override_pipeline_cls_name="WanCausalDMDPipeline",
         override_transformer_cls_name="CausalWanTransformer3DModel",
         num_gpus=args.num_gpus,
+        # Keep causal KV-cache tokens replicated. FastVideo otherwise defaults
+        # sp_size to num_gpus, which makes RoPE 8x longer than the local token
+        # sequence in an 8-device FSDP inference job.
+        tp_size=1,
+        sp_size=1,
+        hsdp_replicate_dim=1,
+        hsdp_shard_dim=args.num_gpus,
         use_fsdp_inference=args.num_gpus > 1,
         dit_cpu_offload=False,
         text_encoder_cpu_offload=True,
