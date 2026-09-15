@@ -5,8 +5,10 @@ block-causal student, then uses FastVideo's Self-Forcing DMD2 method to recover
 quality under the student's own autoregressive history. The recommended bring-up
 recipe distills to four denoising steps and uses stochastic gradient truncation:
 one denoising position is sampled per sequence, only that position retains a
-gradient, and previous causal frames/KV remain detached. Causal training uses
-exact PyTorch SDPA rather than VSA or an approximate sparse mask.
+gradient. On student iterations, one causal block is also sampled as the only
+block retaining an autograd graph; previous causal frames/KV remain detached.
+Causal training uses exact PyTorch SDPA rather than VSA or an approximate
+sparse mask.
 
 This is an engineering bring-up configuration, not a published Wan2.2-5B
 quality recipe. Completing the commands proves that the two-stage training,
@@ -224,6 +226,10 @@ Important DMD2 parameters:
   four denoising positions per sequence. Earlier positions run under
   `no_grad`; previous generated frames and KV are detached. Across iterations,
   every one of the four positions receives supervision.
+- `gradient_block_mode: random_one` uniformly samples one causal block on each
+  student iteration and retains an autograd graph only for that block. The loss
+  is multiplied by the block count, making this an unbiased block-gradient
+  estimator while avoiding five simultaneous student graphs at 49 frames.
 - `generator_update_interval: 5` means iterations 1-4 train only the critic and
   iteration 5 trains only the student. This is the OOM-safe alternating path.
 

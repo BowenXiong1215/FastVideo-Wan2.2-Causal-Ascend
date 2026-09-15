@@ -105,6 +105,8 @@ def main() -> int:
                     errors.append(f"four-step DMD2 must use stochastic truncation: {config}")
                 if method.get("same_step_across_blocks") is not True:
                     errors.append(f"four-step DMD2 must sample one step per sequence: {config}")
+                if method.get("gradient_block_mode") != "random_one":
+                    errors.append(f"four-step DMD2 must retain one block graph: {config}")
                 if data.get("num_latent_t") != 13 or data.get("num_frames") != 49:
                     errors.append(f"four-step bring-up must start at 49 frames: {config}")
                 if loop.get("max_train_steps") != 100:
@@ -126,7 +128,12 @@ def main() -> int:
     self_forcing_source = (
         ROOT / "fastvideo/train/methods/distribution_matching/self_forcing.py"
     ).read_text(encoding="utf-8")
-    for marker in ("_sample_exit_indices", "torch.no_grad()", "store_kv=False"):
+    for marker in (
+        "_sample_exit_indices",
+        "_sample_gradient_block_index",
+        "torch.no_grad()",
+        "store_kv=False",
+    ):
         if marker not in self_forcing_source:
             errors.append(f"stochastic gradient truncation marker is missing: {marker}")
 

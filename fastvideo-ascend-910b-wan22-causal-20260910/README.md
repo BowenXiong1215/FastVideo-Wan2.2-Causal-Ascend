@@ -26,6 +26,9 @@ The recommended DMD2 config starts with 49 frames and stops at 100 iterations,
 saving steps 25/50/75/100. An 81-frame tier is documented after the short run is
 stable. Exported DMD checkpoints carry their exact inference schedule so a
 four-step checkpoint cannot silently fall back to the old 50-step sampler.
+Student iterations retain an autograd graph for one uniformly sampled causal
+block and rescale the loss accordingly, instead of keeping all block graphs
+alive while teacher and critic scoring runs.
 
 ```bash
 tar -xzf fastvideo-ascend-910b-wan22-causal-20260910.tar.gz

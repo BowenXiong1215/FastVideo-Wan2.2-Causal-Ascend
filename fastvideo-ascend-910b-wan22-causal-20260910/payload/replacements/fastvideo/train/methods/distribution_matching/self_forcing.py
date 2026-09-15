@@ -139,6 +139,20 @@ class SelfForcingMethod(DMD2Method):
                              f">= 0, got {start_grad_frame}")
         self._start_gradient_frame = int(start_grad_frame)
 
+        gradient_block_mode_raw = mcfg.get("gradient_block_mode", "all")
+        gradient_block_mode = _require_str(
+            gradient_block_mode_raw,
+            where="method_config.gradient_block_mode",
+        ).strip().lower()
+        if gradient_block_mode not in {"all", "random_one"}:
+            raise ValueError("method_config.gradient_block_mode must be one "
+                             "of {all, random_one}, got "
+                             f"{gradient_block_mode_raw!r}")
+        self._gradient_block_mode: Literal["all", "random_one"] = (
+            gradient_block_mode  # type: ignore[assignment]
+        )
+        self._rollout_gradient_scale = 1.0
+
         shift = float(getattr(
             self.training_config.pipeline_config,
             "flow_shift",
@@ -279,6 +293,37 @@ class SelfForcingMethod(DMD2Method):
             return [int(indices.item()) for _ in range(num_blocks)]
         return [int(i) for i in indices.tolist()]
 
+    def _sample_gradient_block_index(
+        self,
+        *,
+        num_blocks: int,
+        device: torch.device,
+    ) -> int | None:
+        """Select the only causal block whose student graph is retained.
+
+        ``random_one`` is a memory-bounded, unbiased block estimator: the DMD
+        loss is multiplied by the number of blocks after uniformly sampling
+        one block. All ranks use the same sampled block.
+        """
+        if self._gradient_block_mode == "all":
+            return None
+        if num_blocks <= 0:
+            raise ValueError("num_blocks must be positive")
+
+        if not dist.is_initialized() or dist.get_rank() == 0:
+            index = torch.randint(
+                low=0,
+                high=num_blocks,
+                size=(1,),
+                device=device,
+                generator=self.cuda_generator,
+            )
+        else:
+            index = torch.empty((1,), dtype=torch.long, device=device)
+        if dist.is_initialized():
+            dist.broadcast(index, src=0)
+        return int(index.item())
+
     def _student_rollout(self, batch: Any, *, with_grad: bool) -> torch.Tensor:
         if not isinstance(self.student, CausalModelBase):
             raise ValueError("SelfForcingMethod requires a causal student "
@@ -314,6 +359,18 @@ class SelfForcingMethod(DMD2Method):
         # frames, so it is not divisible by the usual three-frame chunk.
         num_blocks = (num_frames + chunk - 1) // chunk
 
+        gradient_block_idx = None
+        if with_grad and self._enable_gradient_in_rollout:
+            gradient_block_idx = self._sample_gradient_block_index(
+                num_blocks=num_blocks,
+                device=device,
+            )
+        self._rollout_gradient_scale = (
+            float(num_blocks)
+            if with_grad and gradient_block_idx is not None
+            else 1.0
+        )
+
         exit_indices = self._sample_exit_indices(
             num_blocks=num_blocks,
             num_steps=num_steps,
@@ -343,8 +400,16 @@ class SelfForcingMethod(DMD2Method):
                     dtype=torch.float32,
                 ))
 
-                enable_grad = (bool(with_grad) and bool(self._enable_gradient_in_rollout) and torch.is_grad_enabled()
-                               and start >= int(self._start_gradient_frame))
+                enable_grad = (
+                    bool(with_grad)
+                    and bool(self._enable_gradient_in_rollout)
+                    and torch.is_grad_enabled()
+                    and start >= int(self._start_gradient_frame)
+                    and (
+                        gradient_block_idx is None
+                        or block_idx == gradient_block_idx
+                    )
+                )
 
                 if not exit_flag:
                     with torch.no_grad():
@@ -566,4 +631,5 @@ class SelfForcingMethod(DMD2Method):
             grad = torch.nan_to_num(grad)
 
         loss = 0.5 * torch.mean((generator_pred_x0.float() - (generator_pred_x0.float() - grad.float()).detach())**2)
+        loss = loss * float(self._rollout_gradient_scale)
         return loss

@@ -45,6 +45,10 @@ method:
   # only. Previous frames and their KV cache stay detached.
   same_step_across_blocks: true
   last_step_only: false
+  # Retain a student autograd graph for one uniformly sampled causal block
+  # only. The loss is rescaled by the number of blocks, preserving an unbiased
+  # gradient estimate without keeping all five 49-frame block graphs alive.
+  gradient_block_mode: random_one
   context_noise: 0.0
   enable_gradient_in_rollout: true
   start_gradient_frame: 0
