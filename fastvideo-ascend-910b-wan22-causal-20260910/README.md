@@ -13,6 +13,8 @@ This layered patch adds an accuracy-first, dense Ascend path for:
 It can be installed on the fixed pristine FastVideo revision or on the existing
 MiniMax-H3 Ascend patched tree.  It intentionally uses the repository's
 old-style `sed -i` whole-file replacement installer.
+Known older versions of files added by this bundle are upgraded by checksum;
+unknown local modifications remain protected from overwrite.
 
 ```bash
 tar -xzf fastvideo-ascend-910b-wan22-causal-20260910.tar.gz

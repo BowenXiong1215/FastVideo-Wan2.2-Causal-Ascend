@@ -59,10 +59,17 @@ validate_target() {
     target="${TARGET_ROOT}/${relative}"
     if test -e "${target}"; then
       actual="$(sha256_file "${target}")"
-      test "${actual}" = "${expected}" || {
-        echo "Existing addition differs: ${relative}" >&2
-        exit 4
-      }
+      if test "${actual}" != "${expected}"; then
+        if test -f "${PATCH_ROOT}/superseded-added.tsv" && \
+          awk -F '\t' -v hash="${actual}" -v path="${relative}" \
+            '$1 == hash && $2 == path { found = 1 } END { exit !found }' \
+            "${PATCH_ROOT}/superseded-added.tsv"; then
+          echo "upgrade: ${relative}"
+        else
+          echo "Existing addition differs: ${relative}" >&2
+          exit 4
+        fi
+      fi
     fi
   done < "${PATCH_ROOT}/added.tsv"
 }
