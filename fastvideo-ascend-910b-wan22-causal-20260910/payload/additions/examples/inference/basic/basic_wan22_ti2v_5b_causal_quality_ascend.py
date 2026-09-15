@@ -6,6 +6,31 @@ from fastvideo import SamplingParam, VideoGenerator
 from fastvideo.configs.pipelines.wan import Wan2_2_TI2V_5B_Config
 
 
+def _parse_steps(value: str) -> list[int]:
+    try:
+        steps = [int(item.strip()) for item in value.split(",") if item.strip()]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "denoising steps must be comma-separated integers"
+        ) from exc
+    if not steps or any(step <= 0 or step > 1000 for step in steps):
+        raise argparse.ArgumentTypeError(
+            "denoising steps must contain integers in the range 1..1000"
+        )
+    return steps
+
+
+def _exported_dmd_steps(model_path: str) -> list[int] | None:
+    config_path = os.path.join(model_path, "fastvideo_causal_config.json")
+    if not os.path.isfile(config_path):
+        return None
+    with open(config_path, "r", encoding="utf-8") as handle:
+        raw_steps = json.load(handle).get("dmd_denoising_steps")
+    if raw_steps is None:
+        return None
+    return _parse_steps(",".join(str(step) for step in raw_steps))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", required=True)
@@ -18,6 +43,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--num-gpus", type=int, default=8)
     parser.add_argument("--stage", choices=("auto", "sft", "dmd2"), default="auto")
+    parser.add_argument(
+        "--dmd-denoising-steps",
+        type=_parse_steps,
+        help=("override the DMD2 schedule, for example 1000,750,500,250; "
+              "by default it is read from the export metadata"),
+    )
     args = parser.parse_args()
 
     pipeline_config = Wan2_2_TI2V_5B_Config()
@@ -39,14 +70,21 @@ def main() -> None:
     else:
         stage = args.stage
 
+    dmd_steps = None
     if stage == "sft":
         pipeline_class = "WanCausalPipeline"
     else:
         pipeline_class = "WanCausalDMDPipeline"
-        pipeline_config.dmd_denoising_steps = list(range(1000, 0, -20))
+        dmd_steps = args.dmd_denoising_steps or _exported_dmd_steps(args.model_path)
+        if dmd_steps is None:
+            raise ValueError(
+                "DMD2 schedule metadata is missing. Re-export the checkpoint or "
+                "pass --dmd-denoising-steps explicitly."
+            )
+        pipeline_config.dmd_denoising_steps = dmd_steps
         pipeline_config.warp_denoising_step = True
 
-    print(f"Using {stage} inference pipeline: {pipeline_class}")
+    print(f"Using {stage} inference pipeline: {pipeline_class}; steps={dmd_steps}")
 
     generator = VideoGenerator.from_pretrained(
         args.model_path,
@@ -66,7 +104,7 @@ def main() -> None:
         text_encoder_cpu_offload=True,
         pin_cpu_memory=True,
         num_frame_per_block=3,
-        dmd_denoising_steps=(list(range(1000, 0, -20)) if stage == "dmd2" else None),
+        dmd_denoising_steps=dmd_steps,
     )
     # Use the local export as the preset lookup key.  This keeps inference
     # fully offline on clusters that cannot reach Hugging Face.
@@ -76,7 +114,7 @@ def main() -> None:
     sampling.num_frames = args.num_frames
     sampling.fps = args.fps
     sampling.seed = args.seed
-    sampling.num_inference_steps = 50
+    sampling.num_inference_steps = len(dmd_steps) if dmd_steps is not None else 50
     sampling.guidance_scale = 1.0
     generator.generate_video(
         args.prompt,

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = (
     ROOT / "examples/train/configs/ascend/wan2_2_ti2v_5b_causal_sft.yaml",
     ROOT / "examples/train/configs/ascend/wan2_2_ti2v_5b_causal_dmd2_quality.yaml",
+    ROOT / "examples/train/configs/ascend/wan2_2_ti2v_5b_causal_dmd2_4step.yaml",
 )
 
 
@@ -92,6 +93,24 @@ def main() -> int:
                     )
                 if method.get("student_sample_type") != "ode":
                     errors.append(f"quality-recovery DMD2 must use an ODE rollout: {config}")
+            if config.name.endswith("causal_dmd2_4step.yaml"):
+                method = parsed.get("method", {})
+                training = parsed.get("training", {})
+                data = training.get("data", {})
+                loop = training.get("loop", {})
+                checkpoint = training.get("checkpoint", {})
+                if method.get("dmd_denoising_steps") != [1000, 750, 500, 250]:
+                    errors.append(f"four-step DMD2 schedule is invalid: {config}")
+                if method.get("last_step_only") is not False:
+                    errors.append(f"four-step DMD2 must use stochastic truncation: {config}")
+                if method.get("same_step_across_blocks") is not True:
+                    errors.append(f"four-step DMD2 must sample one step per sequence: {config}")
+                if data.get("num_latent_t") != 13 or data.get("num_frames") != 49:
+                    errors.append(f"four-step bring-up must start at 49 frames: {config}")
+                if loop.get("max_train_steps") != 100:
+                    errors.append(f"four-step bring-up must stop at 100 iterations: {config}")
+                if checkpoint.get("training_state_checkpointing_steps") != 25:
+                    errors.append(f"four-step bring-up must checkpoint every 25 iterations: {config}")
 
     causal_source = (ROOT / "fastvideo/models/dits/causal_wanvideo.py").read_text(encoding="utf-8")
     if "_forward_blockwise_sdpa" not in causal_source:
@@ -103,6 +122,13 @@ def main() -> int:
         source = (ROOT / relative).read_text(encoding="utf-8")
         if 'attn_kind="vsa"' in source:
             errors.append(f"hard-coded VSA attention remains in {relative}")
+
+    self_forcing_source = (
+        ROOT / "fastvideo/train/methods/distribution_matching/self_forcing.py"
+    ).read_text(encoding="utf-8")
+    for marker in ("_sample_exit_indices", "torch.no_grad()", "store_kv=False"):
+        if marker not in self_forcing_source:
+            errors.append(f"stochastic gradient truncation marker is missing: {marker}")
 
     print(f"Model path: {model}")
     if args.data_path is not None:
