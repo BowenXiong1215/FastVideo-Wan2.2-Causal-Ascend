@@ -8,6 +8,7 @@ This layered patch adds an accuracy-first, dense Ascend path for:
 2. Self-Forcing DMD2 quality recovery with a retained 50-step schedule.
 3. DCP export and offline causal multi-step inference.
 4. NPU-aware pinned-memory routing for the Parquet StatefulDataLoader.
+5. Checkpoint-metadata-driven export that preserves offline local model paths.
 
 It can be installed on the fixed pristine FastVideo revision or on the existing
 MiniMax-H3 Ascend patched tree.  It intentionally uses the repository's

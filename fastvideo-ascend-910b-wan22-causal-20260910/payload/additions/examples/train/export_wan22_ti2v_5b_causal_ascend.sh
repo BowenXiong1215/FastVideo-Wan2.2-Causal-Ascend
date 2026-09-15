@@ -10,12 +10,10 @@ STAGE="$1"
 CHECKPOINT="$2"
 case "${STAGE}" in
   sft)
-    CONFIG="examples/train/configs/ascend/wan2_2_ti2v_5b_causal_sft.yaml"
     DEFAULT_OUTPUT="outputs/wan22_ti2v_5b_causal_sft_export"
     PIPELINE_CLASS="WanCausalPipeline"
     ;;
   dmd2)
-    CONFIG="examples/train/configs/ascend/wan2_2_ti2v_5b_causal_dmd2_quality.yaml"
     DEFAULT_OUTPUT="outputs/SFWan2.2-TI2V-5B-Ascend-Causal"
     PIPELINE_CLASS="WanCausalDMDPipeline"
     ;;
@@ -28,7 +26,6 @@ OUTPUT="${3:-${DEFAULT_OUTPUT}}"
 
 python -m fastvideo.train.entrypoint.dcp_to_diffusers \
   --checkpoint "${CHECKPOINT}" \
-  --config "${CONFIG}" \
   --role student \
   --output-dir "${OUTPUT}" \
   --overwrite \
