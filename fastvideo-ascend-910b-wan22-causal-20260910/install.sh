@@ -49,9 +49,16 @@ validate_target() {
     test -f "${target}" || { echo "Missing upstream file: ${relative}" >&2; exit 4; }
     actual="$(sha256_file "${target}")"
     if test "${actual}" != "${upstream}" && test "${actual}" != "${expected}"; then
-      echo "Source version mismatch: ${relative}" >&2
-      echo "Expected pristine FastVideo ${UPSTREAM_COMMIT} or this patch's installed version." >&2
-      exit 4
+      if test -f "${PATCH_ROOT}/superseded-modified.tsv" && \
+        awk -F '\t' -v hash="${actual}" -v path="${relative}" \
+          '$1 == hash && $2 == path { found = 1 } END { exit !found }' \
+          "${PATCH_ROOT}/superseded-modified.tsv"; then
+        echo "upgrade: ${relative}"
+      else
+        echo "Source version mismatch: ${relative}" >&2
+        echo "Expected pristine FastVideo ${UPSTREAM_COMMIT} or this patch's installed version." >&2
+        exit 4
+      fi
     fi
   done < "${PATCH_ROOT}/modified.tsv"
 

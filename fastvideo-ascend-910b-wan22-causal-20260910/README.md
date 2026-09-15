@@ -16,6 +16,11 @@ old-style `sed -i` whole-file replacement installer.
 Known older versions of files added by this bundle are upgraded by checksum;
 unknown local modifications remain protected from overwrite.
 
+DMD2 uses mutually exclusive critic and student iterations.  With
+`generator_update_interval: 5`, four critic updates are followed by one student
+update, avoiding simultaneous critic/student autograd graphs at the student
+memory peak while preserving both objectives.
+
 ```bash
 tar -xzf fastvideo-ascend-910b-wan22-causal-20260910.tar.gz
 bash fastvideo-ascend-910b-wan22-causal-20260910/install.sh /path/to/FastVideo

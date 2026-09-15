@@ -110,7 +110,10 @@ class DMD2Method(TrainingMethod):
             device=training_batch.latents.device,
             dtype=training_batch.latents.dtype,
         )
+        fake_score_loss = torch.zeros_like(generator_loss)
         student_ctx = None
+        critic_ctx = None
+        critic_outputs: dict[str, Any] = {}
         if update_student:
             generator_pred_x0 = self._student_rollout(training_batch, with_grad=True)
             student_ctx = (
@@ -120,12 +123,12 @@ class DMD2Method(TrainingMethod):
                  else training_batch.attn_metadata),
             )
             generator_loss = self._dmd_loss(generator_pred_x0, training_batch)
-
-        (
-            fake_score_loss,
-            critic_ctx,
-            critic_outputs,
-        ) = self._critic_flow_matching_loss(training_batch)
+        else:
+            (
+                fake_score_loss,
+                critic_ctx,
+                critic_outputs,
+            ) = self._critic_flow_matching_loss(training_batch)
 
         total_loss = generator_loss + fake_score_loss
         loss_map = {
@@ -140,7 +143,10 @@ class DMD2Method(TrainingMethod):
             "student_ctx": student_ctx,
             "critic_ctx": critic_ctx,
         }
-        metrics: dict[str, LogScalar] = {"update_student": float(update_student)}
+        metrics: dict[str, LogScalar] = {
+            "update_student": float(update_student),
+            "update_critic": float(not update_student),
+        }
         return loss_map, outputs, metrics
 
     # TrainingMethod override: backward
@@ -171,48 +177,42 @@ class DMD2Method(TrainingMethod):
                 student_ctx,
                 grad_accum_rounds=grad_accum_rounds,
             )
-
-        critic_ctx = backward_ctx.get("critic_ctx")
-        if critic_ctx is None:
-            raise RuntimeError("Missing critic backward context")
-        self.critic.backward(
-            loss_map["fake_score_loss"],
-            critic_ctx,
-            grad_accum_rounds=grad_accum_rounds,
-        )
+        else:
+            critic_ctx = backward_ctx.get("critic_ctx")
+            if critic_ctx is None:
+                raise RuntimeError("Missing critic backward context")
+            self.critic.backward(
+                loss_map["fake_score_loss"],
+                critic_ctx,
+                grad_accum_rounds=grad_accum_rounds,
+            )
 
     # TrainingMethod override: get_optimizers
     def get_optimizers(
         self,
         iteration: int,
     ) -> list[torch.optim.Optimizer]:
-        optimizers: list[torch.optim.Optimizer] = []
-        optimizers.append(self._critic_optimizer)
         if self._should_update_student(iteration):
-            optimizers.append(self._student_optimizer)
-        return optimizers
+            return [self._student_optimizer]
+        return [self._critic_optimizer]
 
     # TrainingMethod override: get_lr_schedulers
     def get_lr_schedulers(
         self,
         iteration: int,
     ) -> list[Any]:
-        schedulers: list[Any] = []
-        schedulers.append(self._critic_lr_scheduler)
         if self._should_update_student(iteration):
-            schedulers.append(self._student_lr_scheduler)
-        return schedulers
+            return [self._student_lr_scheduler]
+        return [self._critic_lr_scheduler]
 
     # TrainingMethod override: get_grad_clip_targets
     def get_grad_clip_targets(
         self,
         iteration: int,
     ) -> dict[str, torch.nn.Module]:
-        targets: dict[str, torch.nn.Module] = {}
         if self._should_update_student(iteration):
-            targets["student"] = (self.student.transformer)
-        targets["critic"] = self.critic.transformer
-        return targets
+            return {"student": self.student.transformer}
+        return {"critic": self.critic.transformer}
 
     def _parse_rollout_mode(self, ) -> Literal["simulate", "data_latent"]:
         """Parse how DMD2 obtains the latent point used for rollout.
