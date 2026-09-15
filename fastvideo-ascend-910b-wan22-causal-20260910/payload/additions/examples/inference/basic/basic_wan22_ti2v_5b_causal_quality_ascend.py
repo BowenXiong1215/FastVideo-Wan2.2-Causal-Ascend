@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 
 from fastvideo import SamplingParam, VideoGenerator
 from fastvideo.configs.pipelines.wan import Wan2_2_TI2V_5B_Config
@@ -15,17 +17,41 @@ def main() -> None:
     parser.add_argument("--fps", type=int, default=24)
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--num-gpus", type=int, default=8)
+    parser.add_argument("--stage", choices=("auto", "sft", "dmd2"), default="auto")
     args = parser.parse_args()
 
     pipeline_config = Wan2_2_TI2V_5B_Config()
     pipeline_config.is_causal = True
-    pipeline_config.dmd_denoising_steps = list(range(1000, 0, -20))
-    pipeline_config.warp_denoising_step = True
+
+    if args.stage == "auto":
+        model_index_path = os.path.join(args.model_path, "model_index.json")
+        with open(model_index_path, "r", encoding="utf-8") as handle:
+            exported_pipeline_class = json.load(handle).get("_class_name")
+        if exported_pipeline_class == "WanCausalPipeline":
+            stage = "sft"
+        elif exported_pipeline_class == "WanCausalDMDPipeline":
+            stage = "dmd2"
+        else:
+            raise ValueError(
+                f"Unsupported causal Wan pipeline in {model_index_path}: "
+                f"{exported_pipeline_class!r}"
+            )
+    else:
+        stage = args.stage
+
+    if stage == "sft":
+        pipeline_class = "WanCausalPipeline"
+    else:
+        pipeline_class = "WanCausalDMDPipeline"
+        pipeline_config.dmd_denoising_steps = list(range(1000, 0, -20))
+        pipeline_config.warp_denoising_step = True
+
+    print(f"Using {stage} inference pipeline: {pipeline_class}")
 
     generator = VideoGenerator.from_pretrained(
         args.model_path,
         pipeline_config=pipeline_config,
-        override_pipeline_cls_name="WanCausalDMDPipeline",
+        override_pipeline_cls_name=pipeline_class,
         override_transformer_cls_name="CausalWanTransformer3DModel",
         num_gpus=args.num_gpus,
         # Keep causal KV-cache tokens replicated. FastVideo otherwise defaults
@@ -40,7 +66,7 @@ def main() -> None:
         text_encoder_cpu_offload=True,
         pin_cpu_memory=True,
         num_frame_per_block=3,
-        dmd_denoising_steps=list(range(1000, 0, -20)),
+        dmd_denoising_steps=(list(range(1000, 0, -20)) if stage == "dmd2" else None),
     )
     # Use the local export as the preset lookup key.  This keeps inference
     # fully offline on clusters that cannot reach Hugging Face.
