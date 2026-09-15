@@ -10,8 +10,9 @@ Wan2.2 TI2V-5B 转换为按 latent block 自回归生成的 causal 视频骨干�
 
 当前推荐方案是 4 步蒸馏：保留 causal SFT 初始化，DMD2 使用
 `[1000, 750, 500, 250]`，并在每个序列上随机选择一个去噪位置保留梯度；
-student 更新还会随机选择一个 causal block 保留反向图，其余 block 立即
-detach。之前的 50 步配置仍保留用于对照实验。
+student 更新固定只保留最后一个单 latent 帧 remainder block 的反向图，
+其余 block 立即 detach，避免随机抽中三帧 block 时显存突然变成三倍。
+之前的 50 步配置仍保留用于对照实验。
 
 ## 固定环境
 

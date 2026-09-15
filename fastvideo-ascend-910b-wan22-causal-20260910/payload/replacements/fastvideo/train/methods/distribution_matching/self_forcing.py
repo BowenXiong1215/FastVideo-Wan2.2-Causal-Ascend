@@ -144,11 +144,11 @@ class SelfForcingMethod(DMD2Method):
             gradient_block_mode_raw,
             where="method_config.gradient_block_mode",
         ).strip().lower()
-        if gradient_block_mode not in {"all", "random_one"}:
+        if gradient_block_mode not in {"all", "random_one", "last_one"}:
             raise ValueError("method_config.gradient_block_mode must be one "
-                             "of {all, random_one}, got "
+                             "of {all, random_one, last_one}, got "
                              f"{gradient_block_mode_raw!r}")
-        self._gradient_block_mode: Literal["all", "random_one"] = (
+        self._gradient_block_mode: Literal["all", "random_one", "last_one"] = (
             gradient_block_mode  # type: ignore[assignment]
         )
         self._rollout_gradient_scale = 1.0
@@ -310,6 +310,9 @@ class SelfForcingMethod(DMD2Method):
         if num_blocks <= 0:
             raise ValueError("num_blocks must be positive")
 
+        if self._gradient_block_mode == "last_one":
+            return num_blocks - 1
+
         if not dist.is_initialized() or dist.get_rank() == 0:
             index = torch.randint(
                 low=0,
@@ -365,11 +368,23 @@ class SelfForcingMethod(DMD2Method):
                 num_blocks=num_blocks,
                 device=device,
             )
-        self._rollout_gradient_scale = (
-            float(num_blocks)
-            if with_grad and gradient_block_idx is not None
-            else 1.0
-        )
+        self._rollout_gradient_scale = 1.0
+        if with_grad and gradient_block_idx is not None:
+            if self._gradient_block_mode == "random_one":
+                self._rollout_gradient_scale = float(num_blocks)
+            else:
+                active_start = int(gradient_block_idx * chunk)
+                active_frames = int(min(chunk, num_frames - active_start))
+                if active_frames != 1:
+                    raise ValueError(
+                        "gradient_block_mode=last_one requires a one-frame "
+                        "final latent block; choose num_latent_t such that "
+                        "num_latent_t % chunk_size == 1"
+                    )
+                # Turn the full-sequence mean contribution from the final
+                # frame into a per-frame mean. This keeps the update magnitude
+                # useful while retaining an exact one-frame graph bound.
+                self._rollout_gradient_scale = float(num_frames)
 
         exit_indices = self._sample_exit_indices(
             num_blocks=num_blocks,
