@@ -65,6 +65,8 @@ docs/getting_started/ascend_910b_wan22_causal_distillation.md
   避免离线集群错误访问 Hugging Face Hub。
 - DMD2 的 critic/student 轮次完全分离，避免第 5 步同时持有两套反向图导致 OOM；
   导出时同时记录 4 步时间表，推理自动复用。
+- DMD2 导出只实例化 student 并且只从 DCP 读取 student transformer，不再在
+  单卡上同时构建 5B student、teacher、critic 和两套优化器。
 - 当前不包含动作、键盘或相机控制，因此不是完整可交互世界模型。
 - 已完成 Python/Shell/YAML 静态验证、补丁哈希校验、干净源码安装及重复安装验证。
 - 尚未在本仓库打包机器上完成真实 910B 张量测试或数值质量验证。

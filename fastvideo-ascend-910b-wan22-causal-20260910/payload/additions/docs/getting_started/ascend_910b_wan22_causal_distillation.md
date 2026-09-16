@@ -245,6 +245,12 @@ bash examples/train/export_wan22_ti2v_5b_causal_ascend.sh \
   /outputs/SFWan2.2-TI2V-5B-Ascend-Causal
 ```
 
+The export helper constructs only the requested student role and asks DCP for
+only `roles.student.transformer`. It does not instantiate the 5B teacher,
+critic, or either optimizer on the single export device. Before strict reload
+verification it releases the exported student and clears the accelerator
+allocator.
+
 ## 4. Causal multi-step inference
 
 ```bash

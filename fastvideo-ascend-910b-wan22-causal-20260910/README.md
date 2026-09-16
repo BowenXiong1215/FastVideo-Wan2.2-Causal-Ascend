@@ -29,6 +29,8 @@ four-step checkpoint cannot silently fall back to the old 50-step sampler.
 Student iterations retain an autograd graph only for the final one-frame
 remainder block and rescale the loss accordingly. This makes the graph-memory
 ceiling deterministic instead of occasionally sampling a three-frame block.
+The DCP exporter is role-only: a student export does not instantiate the 5B
+teacher, critic, or optimizer states on the single export device.
 
 ```bash
 tar -xzf fastvideo-ascend-910b-wan22-causal-20260910.tar.gz

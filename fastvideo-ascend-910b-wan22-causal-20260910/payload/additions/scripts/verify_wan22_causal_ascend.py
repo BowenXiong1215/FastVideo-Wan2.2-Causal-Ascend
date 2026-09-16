@@ -137,6 +137,13 @@ def main() -> int:
         if marker not in self_forcing_source:
             errors.append(f"stochastic gradient truncation marker is missing: {marker}")
 
+    role_export_source = (ROOT / "scripts/export_dcp_role_only.py").read_text(encoding="utf-8")
+    for forbidden in ("build_from_config", "method.checkpoint_state()"):
+        if forbidden in role_export_source:
+            errors.append(f"role-only exporter constructs full training state: {forbidden}")
+    if 'states = {f"roles.{role}.transformer": ModelWrapper(transformer)}' not in role_export_source:
+        errors.append("role-only exporter does not request only the selected transformer")
+
     print(f"Model path: {model}")
     if args.data_path is not None:
         print(f"Data path:  {args.data_path.expanduser().resolve()}")

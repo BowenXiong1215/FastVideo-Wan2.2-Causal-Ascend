@@ -24,7 +24,7 @@ case "${STAGE}" in
 esac
 OUTPUT="${3:-${DEFAULT_OUTPUT}}"
 
-python -m fastvideo.train.entrypoint.dcp_to_diffusers \
+python scripts/export_dcp_role_only.py \
   --checkpoint "${CHECKPOINT}" \
   --role student \
   --output-dir "${OUTPUT}" \
