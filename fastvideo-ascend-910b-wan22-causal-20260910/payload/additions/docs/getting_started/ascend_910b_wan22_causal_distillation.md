@@ -251,6 +251,11 @@ critic, or either optimizer on the single export device. Before strict reload
 verification it releases the exported student and clears the accelerator
 allocator.
 
+Strict reload verification is enabled by default. If the weight file has been
+written successfully but strict reload alone exceeds the device limit, rerun
+the wrapper with `FASTVIDEO_EXPORT_VERIFY=0`; inference itself remains the
+subsequent end-to-end verification.
+
 ## 4. Causal multi-step inference
 
 ```bash

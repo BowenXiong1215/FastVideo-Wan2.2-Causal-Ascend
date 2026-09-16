@@ -24,12 +24,17 @@ case "${STAGE}" in
 esac
 OUTPUT="${3:-${DEFAULT_OUTPUT}}"
 
+VERIFY_ARGS=(--verify)
+if [[ "${FASTVIDEO_EXPORT_VERIFY:-1}" == "0" ]]; then
+  VERIFY_ARGS=()
+fi
+
 python scripts/export_dcp_role_only.py \
   --checkpoint "${CHECKPOINT}" \
   --role student \
   --output-dir "${OUTPUT}" \
   --overwrite \
-  --verify
+  "${VERIFY_ARGS[@]}"
 
 python - "${OUTPUT}" "${PIPELINE_CLASS}" "${CHECKPOINT}" "${STAGE}" <<'PY'
 import glob
