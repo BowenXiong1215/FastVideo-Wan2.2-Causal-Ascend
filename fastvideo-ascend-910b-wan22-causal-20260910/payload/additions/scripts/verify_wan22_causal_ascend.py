@@ -105,8 +105,8 @@ def main() -> int:
                     errors.append(f"four-step DMD2 must use stochastic truncation: {config}")
                 if method.get("same_step_across_blocks") is not True:
                     errors.append(f"four-step DMD2 must sample one step per sequence: {config}")
-                if method.get("gradient_block_mode") != "last_one":
-                    errors.append(f"four-step DMD2 must retain the final one-frame graph: {config}")
+                if method.get("gradient_block_mode") != "random_one":
+                    errors.append(f"four-step DMD2 must randomly cover causal blocks: {config}")
                 if data.get("num_latent_t") != 13 or data.get("num_frames") != 49:
                     errors.append(f"four-step bring-up must start at 49 frames: {config}")
                 if loop.get("max_train_steps") != 100:
@@ -131,6 +131,8 @@ def main() -> int:
     for marker in (
         "_sample_exit_indices",
         "_sample_gradient_block_index",
+        "target_pred_x0 = self._student_rollout(batch, with_grad=False)",
+        "generator_pred_x0 = self._student_rollout(batch, with_grad=True)",
         "torch.no_grad()",
         "store_kv=False",
     ):

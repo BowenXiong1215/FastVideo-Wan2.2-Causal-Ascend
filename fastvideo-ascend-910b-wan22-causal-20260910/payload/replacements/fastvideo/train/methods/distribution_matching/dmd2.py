@@ -115,14 +115,13 @@ class DMD2Method(TrainingMethod):
         critic_ctx = None
         critic_outputs: dict[str, Any] = {}
         if update_student:
-            generator_pred_x0 = self._student_rollout(training_batch, with_grad=True)
             student_ctx = (
                 training_batch.timesteps,
                 (training_batch.attn_metadata_vsa
                  if self._student_attn_kind == "vsa"
                  else training_batch.attn_metadata),
             )
-            generator_loss = self._dmd_loss(generator_pred_x0, training_batch)
+            generator_loss = self._generator_loss(training_batch)
         else:
             (
                 fake_score_loss,
@@ -148,6 +147,11 @@ class DMD2Method(TrainingMethod):
             "update_critic": float(not update_student),
         }
         return loss_map, outputs, metrics
+
+    def _generator_loss(self, batch: Any) -> torch.Tensor:
+        """Build the student rollout and its DMD surrogate loss."""
+        generator_pred_x0 = self._student_rollout(batch, with_grad=True)
+        return self._dmd_loss(generator_pred_x0, batch)
 
     # TrainingMethod override: backward
     def backward(

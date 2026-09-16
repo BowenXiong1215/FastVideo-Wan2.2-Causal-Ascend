@@ -5,10 +5,11 @@ block-causal student, then uses FastVideo's Self-Forcing DMD2 method to recover
 quality under the student's own autoregressive history. The recommended bring-up
 recipe distills to four denoising steps and uses stochastic gradient truncation:
 one denoising position is sampled per sequence, only that position retains a
-gradient. On student iterations, the final one-frame remainder block is the
-only block retaining an autograd graph; previous causal frames/KV remain
-detached. This gives a deterministic graph-memory bound on 910B. Causal
-training uses exact PyTorch SDPA rather than VSA or an approximate sparse mask.
+gradient. Student iterations first compute the teacher/critic target with a
+fully detached rollout, release that inference peak, and only then recompute
+one randomly sampled causal block with gradients. Previous causal frames/KV
+remain detached. Causal training uses exact PyTorch SDPA rather than VSA or an
+approximate sparse mask.
 
 This is an engineering bring-up configuration, not a published Wan2.2-5B
 quality recipe. Completing the commands proves that the two-stage training,
@@ -226,10 +227,10 @@ Important DMD2 parameters:
   four denoising positions per sequence. Earlier positions run under
   `no_grad`; previous generated frames and KV are detached. Across iterations,
   every one of the four positions receives supervision.
-- `gradient_block_mode: last_one` retains only the final one-frame remainder
-  from the `3+3+3+3+1` latent layout. The loss is rescaled from a sequence mean
-  to that frame's mean. Unlike `random_one`, its memory ceiling cannot jump
-  threefold when a regular three-frame block is selected.
+- `gradient_block_mode: random_one` uniformly samples a causal block and
+  rescales by the block count for an unbiased gradient estimate. Teacher and
+  critic scoring happen in a separate no-grad pass before this graph exists,
+  so a regular three-frame block no longer overlaps the score-model peak.
 - `generator_update_interval: 5` means iterations 1-4 train only the critic and
   iteration 5 trains only the student. This is the OOM-safe alternating path.
 

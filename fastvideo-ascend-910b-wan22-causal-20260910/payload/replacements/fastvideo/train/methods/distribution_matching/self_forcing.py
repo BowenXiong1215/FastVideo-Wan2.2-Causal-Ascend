@@ -351,7 +351,12 @@ class SelfForcingMethod(DMD2Method):
         denoising_steps = self._get_denoising_step_list(device)
         num_steps = int(denoising_steps.numel())
 
-        noise_full = torch.randn_like(latents, device=device, dtype=dtype)
+        noise_full = torch.randn(
+            latents.shape,
+            device=device,
+            dtype=dtype,
+            generator=self.cuda_generator,
+        )
 
         chunk = int(self._chunk_size)
         if chunk <= 0:
@@ -587,6 +592,38 @@ class SelfForcingMethod(DMD2Method):
         generator_pred_x0: torch.Tensor,
         batch: Any,
     ) -> torch.Tensor:
+        grad = self._dmd_gradient(generator_pred_x0, batch)
+        return self._dmd_surrogate_loss(generator_pred_x0, grad)
+
+    def _generator_loss(self, batch: Any) -> torch.Tensor:
+        """Compute the score target before retaining a student graph.
+
+        The first rollout and all teacher/critic score evaluations are
+        gradient-free. Their peak memory is released before the second rollout
+        retains one randomly selected causal-block graph. This avoids adding a
+        three-frame student graph on top of the teacher/critic inference peak.
+        """
+        if self.cuda_generator is None:
+            raise RuntimeError("Self-forcing RNG is not initialized")
+        rollout_rng_state = self.cuda_generator.get_state()
+        with torch.no_grad():
+            target_pred_x0 = self._student_rollout(batch, with_grad=False)
+            grad = self._dmd_gradient(target_pred_x0, batch)
+        post_target_rng_state = self.cuda_generator.get_state()
+        del target_pred_x0
+
+        # Reproduce the exact same rollout point for the differentiable pass;
+        # then restore the RNG stream to where target scoring left it.
+        self.cuda_generator.set_state(rollout_rng_state)
+        generator_pred_x0 = self._student_rollout(batch, with_grad=True)
+        self.cuda_generator.set_state(post_target_rng_state)
+        return self._dmd_surrogate_loss(generator_pred_x0, grad)
+
+    def _dmd_gradient(
+        self,
+        generator_pred_x0: torch.Tensor,
+        batch: Any,
+    ) -> torch.Tensor:
         guidance_scale = get_optional_float(
             self.method_config,
             "real_score_guidance_scale",
@@ -645,6 +682,13 @@ class SelfForcingMethod(DMD2Method):
             grad = (faker_x0 - real_cfg_x0) / denom
             grad = torch.nan_to_num(grad)
 
+        return grad.detach()
+
+    def _dmd_surrogate_loss(
+        self,
+        generator_pred_x0: torch.Tensor,
+        grad: torch.Tensor,
+    ) -> torch.Tensor:
         loss = 0.5 * torch.mean((generator_pred_x0.float() - (generator_pred_x0.float() - grad.float()).detach())**2)
         loss = loss * float(self._rollout_gradient_scale)
         return loss

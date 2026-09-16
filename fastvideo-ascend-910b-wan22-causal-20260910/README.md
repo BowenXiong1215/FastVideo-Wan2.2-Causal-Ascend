@@ -26,9 +26,10 @@ The recommended DMD2 config starts with 49 frames and stops at 100 iterations,
 saving steps 25/50/75/100. An 81-frame tier is documented after the short run is
 stable. Exported DMD checkpoints carry their exact inference schedule so a
 four-step checkpoint cannot silently fall back to the old 50-step sampler.
-Student iterations retain an autograd graph only for the final one-frame
-remainder block and rescale the loss accordingly. This makes the graph-memory
-ceiling deterministic instead of occasionally sampling a three-frame block.
+Student iterations compute the teacher/critic target in a detached first pass,
+then recompute one uniformly sampled causal block with gradients. This restores
+unbiased block coverage without overlapping the student graph and score-model
+inference peaks.
 The DCP exporter is role-only: a student export does not instantiate the 5B
 teacher, critic, or optimizer states on the single export device.
 
